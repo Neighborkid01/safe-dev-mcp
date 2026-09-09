@@ -28,16 +28,23 @@ test = ["pytest", "-q"]
 # defines that command and report per-target results. Leave out lint or test
 # on a target that has no such step.
 #
+# cwd is the repo-relative directory the command runs from (default: repo
+# root). A scoped path is rewritten relative to cwd, so when the test runner
+# lives in a workspace directory, set cwd to that directory and call the
+# script directly rather than through "yarn workspace <name>".
+#
 # [[targets]]
 # name = "frontend"
 # path_prefix = "apps/frontend"
-# lint = ["yarn", "workspace", "frontend", "lint"]
-# test = ["yarn", "workspace", "frontend", "test"]
+# cwd = "apps/frontend"
+# lint = ["yarn", "lint"]
+# test = ["yarn", "test"]
 #
 # [[targets]]
 # name = "backend"
 # path_prefix = "apps/backend"
-# test = ["yarn", "workspace", "backend", "test"]
+# cwd = "apps/backend"
+# test = ["yarn", "test"]
 #
 # [[targets]]
 # name = "e2e"

@@ -17,10 +17,14 @@ DEFAULT_MAX_OUTPUT_CHARS = 20_000
 class Target:
     name: str
     path_prefix: str
+    cwd: str
     lint: list[str]
     test: list[str]
     timeout_seconds: int
     max_output_chars: int
+
+    def run_dir(self) -> Path:
+        return REPO_ROOT / self.cwd
 
     def owns(self, rel_path: str) -> bool:
         if not self.path_prefix:
@@ -77,11 +81,24 @@ def _positive_int(table: dict[str, Any], key: str, default: int, where: str) -> 
     return default
 
 
+def _run_cwd(table: dict[str, Any], where: str) -> str:
+    value = table.get("cwd", "")
+    if not isinstance(value, str):
+        _log(f"ignoring 'cwd' in {where}: expected a string")
+        return ""
+    value = value.strip("/")
+    if value and not (REPO_ROOT / value).is_dir():
+        _log(f"ignoring 'cwd' in {where}: '{value}' is not a directory in the repo")
+        return ""
+    return value
+
+
 def _target(table: dict[str, Any], name: str, prefix: str, timeout: int, max_chars: int) -> Target:
     where = f"target '{name}'"
     return Target(
         name=name,
         path_prefix=prefix,
+        cwd=_run_cwd(table, where),
         lint=_command(table, "lint", where),
         test=_command(table, "test", where),
         timeout_seconds=_positive_int(table, "timeout_seconds", timeout, where),
@@ -123,38 +140,63 @@ TARGETS = _load_targets(CONFIG, TIMEOUT_SECONDS, MAX_OUTPUT_CHARS)
 mcp = MCPServer("safe-dev-tools")
 
 
-def _run(cmd: list[str], timeout: int = TIMEOUT_SECONDS, max_chars: int = MAX_OUTPUT_CHARS) -> tuple[str, str]:
+def _run(
+    cmd: list[str],
+    timeout: int = TIMEOUT_SECONDS,
+    max_chars: int = MAX_OUTPUT_CHARS,
+    cwd: Path = REPO_ROOT,
+) -> tuple[str, str]:
     try:
         result = subprocess.run(
             cmd,
-            cwd=REPO_ROOT,
+            cwd=cwd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=timeout,
             shell=False,
             check=False,
         )
-    except subprocess.TimeoutExpired:
-        return f"timed out after {timeout}s", " ".join(cmd)
+    except subprocess.TimeoutExpired as e:
+        partial = _text(e.stdout) + _text(e.stderr)
+        header = f"Command: {' '.join(cmd)}\nOutput captured before the timeout:\n"
+        return f"timed out after {timeout}s", header + _truncate(partial, max_chars)
     except FileNotFoundError:
         return "command not found", cmd[0]
 
     output = (result.stdout or "") + (result.stderr or "")
-    if len(output) > max_chars:
-        output = output[:max_chars] + "\n...[truncated]"
     status = "OK" if result.returncode == 0 else f"exit code {result.returncode}"
-    return status, output.strip()
+    return status, _truncate(output, max_chars)
+
+
+def _text(data: str | bytes | None) -> str:
+    if data is None:
+        return ""
+    return data.decode(errors="replace") if isinstance(data, bytes) else data
+
+
+def _truncate(output: str, max_chars: int) -> str:
+    output = output.strip()
+    if len(output) <= max_chars:
+        return output
+    head = max_chars // 4
+    tail = max_chars - head
+    dropped = len(output) - max_chars
+    return f"{output[:head]}\n...[{dropped} chars truncated]...\n{output[-tail:]}"
 
 
 def _report(status: str, output: str) -> str:
     return f"[{status}]\n{output}"
 
 
+def _run_target(target: Target, cmd: list[str]) -> tuple[str, str]:
+    return _run(cmd, target.timeout_seconds, target.max_output_chars, target.run_dir())
+
+
 def _run_each(jobs: list[tuple[Target, list[str]]]) -> str:
     if len(jobs) == 1:
-        target, cmd = jobs[0]
-        return _report(*_run(cmd, target.timeout_seconds, target.max_output_chars))
-    results = [(t, *_run(cmd, t.timeout_seconds, t.max_output_chars)) for t, cmd in jobs]
+        return _report(*_run_target(*jobs[0]))
+    results = [(t, *_run_target(t, cmd)) for t, cmd in jobs]
     summary = ", ".join(f"{t.name}: {status}" for t, status, _ in results)
     sections = [f"=== {t.name} ===\n{_report(status, output)}" for t, status, output in results]
     return f"Summary: {summary}\n\n" + "\n\n".join(sections)
@@ -191,7 +233,9 @@ def run_tests(path: str = "") -> str:
     if target is None:
         owned = "; ".join(t.label() for t in _targets_with("test"))
         return f"[error]\nNo test target owns '{rel}'. Test targets: {owned}"
-    return _run_each([(target, [*target.test, rel])])
+    scoped = Path(os.path.relpath(REPO_ROOT / rel, target.run_dir())).as_posix()
+    cmd = target.test if scoped == "." else [*target.test, scoped]
+    return _run_each([(target, cmd)])
 
 
 def git_status() -> str:

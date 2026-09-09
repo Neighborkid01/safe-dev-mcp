@@ -83,13 +83,15 @@ Use one `[[targets]]` table per surface instead:
 [[targets]]
 name = "frontend"
 path_prefix = "apps/frontend"
-lint = ["yarn", "workspace", "frontend", "lint"]
-test = ["yarn", "workspace", "frontend", "test"]
+cwd = "apps/frontend"
+lint = ["yarn", "lint"]
+test = ["yarn", "test"]
 
 [[targets]]
 name = "backend"
 path_prefix = "apps/backend"
-test = ["yarn", "workspace", "backend", "test"]
+cwd = "apps/backend"
+test = ["yarn", "test"]
 
 [[targets]]
 name = "e2e"
@@ -102,6 +104,7 @@ timeout_seconds = 600
 |---|---|---|
 | `name` | target | Label used in results. Required |
 | `path_prefix` | target | Repo-relative directory this target owns. Omit to own every path |
+| `cwd` | target | Repo-relative directory the commands run from. Default is the repo root |
 | `lint` | top level or target | Command for `run_lint` |
 | `test` | top level or target | Command for `run_tests`. A scoped path is appended to it |
 | `timeout_seconds` | top level or target | Per-command timeout. Default 60. Target value overrides top level |
@@ -115,6 +118,11 @@ How the tools behave with targets:
 - `run_tests(path)` runs only the target whose `path_prefix` owns that path.
   When several match, the longest prefix wins. If none match, the tool
   returns an error naming the configured targets rather than guessing.
+- The scoped path is rewritten relative to the target's `cwd` before it is
+  appended, and dropped entirely when it is the `cwd` itself. This matters
+  for workspace scripts: `yarn workspace backend test` runs Vitest inside
+  `apps/backend`, so a repo-relative path would be doubled. Set `cwd` to the
+  workspace and call the script directly, as in the example above.
 - `run_tests()` with no path runs every target that has a `test` command and
   returns a summary line followed by a section per target.
 - `run_lint()` runs every target that has a `lint` command, skips the rest,
