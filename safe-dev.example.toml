@@ -1,0 +1,46 @@
+# Copy this file to <repo>/.safe-dev.toml and edit it for that repo.
+# Keep it out of version control:
+#   echo .safe-dev.toml >> .git/info/exclude
+#
+# Every command is an argument list, never a shell string.
+# A tool is only offered to the model when at least one target defines it.
+# Top-level keys must come before the first [[targets]] table.
+
+# Optional defaults. Each target may override them.
+# timeout_seconds = 60
+# max_output_chars = 20000
+
+# Single-surface repo: top-level lint/test act as one target covering every path.
+lint = ["ruff", "check", "."]
+test = ["pytest", "-q"]
+
+# Node equivalent. The trailing "--" makes npm pass an appended path through.
+# lint = ["npm", "run", "lint"]
+# test = ["npm", "test", "--"]
+
+# Go equivalent.
+# lint = ["go", "vet", "./..."]
+# test = ["go", "test", "./..."]
+
+# Monorepo: one [[targets]] table per surface instead of the top-level keys.
+# run_tests(path) runs the target whose path_prefix owns the path (longest
+# prefix wins). run_tests() and run_lint() with no path run every target that
+# defines that command and report per-target results. Leave out lint or test
+# on a target that has no such step.
+#
+# [[targets]]
+# name = "frontend"
+# path_prefix = "apps/frontend"
+# lint = ["yarn", "workspace", "frontend", "lint"]
+# test = ["yarn", "workspace", "frontend", "test"]
+#
+# [[targets]]
+# name = "backend"
+# path_prefix = "apps/backend"
+# test = ["yarn", "workspace", "backend", "test"]
+#
+# [[targets]]
+# name = "e2e"
+# path_prefix = "e2e"
+# test = ["yarn", "test:e2e"]
+# timeout_seconds = 600
