@@ -132,6 +132,16 @@ How the tools behave with targets:
 
 Repos that only need the read-only git tools need no config file at all.
 
+### Git worktrees
+
+Because `.safe-dev.toml` is excluded from git, a linked worktree created with
+`git worktree add` does not get a copy. When the server starts in a worktree
+that has no config of its own, it follows the worktree's `.git` pointer back
+to the main worktree and reads the config there. `path_prefix` and `cwd`
+still resolve against the worktree you are in, so commands run on that
+worktree's files. Put a `.safe-dev.toml` inside a worktree to override the
+shared one for that worktree only.
+
 The tool list is fixed when the server starts, so restart the agent thread
 after editing the config.
 

@@ -51,9 +51,35 @@ def _discover_repo_root() -> Path:
     return cwd
 
 
-def _load_config(root: Path) -> dict[str, Any]:
-    path = root / CONFIG_FILENAME
-    if not path.is_file():
+def _main_worktree_root(root: Path) -> Path | None:
+    dot_git = root / ".git"
+    if not dot_git.is_file():
+        return None
+    try:
+        pointer = dot_git.read_text().strip()
+        if not pointer.startswith("gitdir:"):
+            return None
+        gitdir = (root / pointer.removeprefix("gitdir:").strip()).resolve()
+        common = (gitdir / (gitdir / "commondir").read_text().strip()).resolve()
+    except OSError:
+        return None
+    if common.name != ".git":
+        return None
+    return common.parent
+
+
+def _config_path(root: Path) -> Path | None:
+    local = root / CONFIG_FILENAME
+    if local.is_file():
+        return local
+    main_root = _main_worktree_root(root)
+    if main_root is not None and (main_root / CONFIG_FILENAME).is_file():
+        return main_root / CONFIG_FILENAME
+    return None
+
+
+def _load_config(path: Path | None) -> dict[str, Any]:
+    if path is None:
         return {}
     try:
         with path.open("rb") as f:
@@ -132,7 +158,8 @@ def _load_targets(config: dict[str, Any], timeout: int, max_chars: int) -> list[
 
 
 REPO_ROOT = _discover_repo_root()
-CONFIG = _load_config(REPO_ROOT)
+CONFIG_PATH = _config_path(REPO_ROOT)
+CONFIG = _load_config(CONFIG_PATH)
 TIMEOUT_SECONDS = _positive_int(CONFIG, "timeout_seconds", DEFAULT_TIMEOUT_SECONDS, CONFIG_FILENAME)
 MAX_OUTPUT_CHARS = _positive_int(CONFIG, "max_output_chars", DEFAULT_MAX_OUTPUT_CHARS, CONFIG_FILENAME)
 TARGETS = _load_targets(CONFIG, TIMEOUT_SECONDS, MAX_OUTPUT_CHARS)
@@ -301,6 +328,7 @@ def _register_tools() -> list[str]:
 
 REGISTERED_TOOLS = _register_tools()
 _log(f"repo root: {REPO_ROOT}")
+_log(f"config: {CONFIG_PATH or 'none'}")
 _log(f"targets: {', '.join(t.label() for t in TARGETS) or 'none'}")
 _log(f"tools: {', '.join(REGISTERED_TOOLS) or 'none'}")
 
